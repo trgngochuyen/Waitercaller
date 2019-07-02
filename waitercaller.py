@@ -11,10 +11,13 @@ from flask_login import logout_user
 from forms import CreateTableForm
 from forms import LoginForm
 from forms import RegistrationForm
-from mockdbhelper import MockDBHelper as DBHelper
 from passwordhelper import PasswordHelper
 from user import User
-import config
+import config as config
+if config.test:
+	from mockdbhelper import MockDBHelper as DBHelper
+else:
+	from dbhelper import DBHelper
 import datetime
 
 
@@ -35,8 +38,6 @@ def load_user(user_id):
 
 @app.route("/")
 def home():
-    if login_user:
-        return redirect(url_for('account'))
     return render_template('home2.html', loginform=LoginForm(), registrationform=RegistrationForm())
 
 
@@ -86,7 +87,7 @@ def account_createtable():
     form = CreateTableForm(request.form)
     if form.validate():
         tableid = DB.add_table(form.tablenumber.data, current_user.get_id())
-        new_url = BH.shorten_url(config.base_url + "newrequest/" + tableid)
+        new_url = BH.shorten_url(config.base_url + "newrequest/" + str(tableid))
         DB.update_table(tableid, new_url)
         return redirect(url_for('account'))
     return render_template('account.html', createtableform=form, tables=DB.get_tables(current_user.get_id()))
@@ -102,8 +103,9 @@ def account_deletetable():
 
 @app.route("/newrequest/<tid>")
 def new_request(tid):
-    DB.add_request(tid, datetime.datetime.now())
-    return "Your request has been logged and a waiter will be with you shortly."
+    if DB.add_request(tid, datetime.datetime.now()):
+	return "Your request has been logged and a waiter will be with you shortly"
+    return "There is already a request pending for this table. Please be patient, a waiter will be there as soon as possible."
 
 
 @app.route("/logout")
@@ -115,12 +117,13 @@ def logout():
 @app.route("/register", methods=["POST"])
 def register():
     form = RegistrationForm(request.form)
+    print('ye2')
     if form.validate():
         if DB.get_user(form.email.data):
             form.email.errors.append("Email address already registered")
-            return render_template('home2.html', registrationform=form)
+            return render_template('home2.html', loginform=LoginForm(), registrationform=form)
         salt = PH.get_salt().decode('utf-8')
-        hashed = PH.get_hash(form.password2.data + salt)
+        hashed = PH.get_hash(salt + form.password2.data)
         DB.add_user(form.email.data, salt, hashed)
         return render_template('home2.html', loginform=LoginForm(), registrationform=form, onloadmessage='Registration successful. Please log in')
     return render_template('home2.html', loginform=LoginForm(), registrationform=form)
